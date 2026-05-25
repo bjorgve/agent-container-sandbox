@@ -22,12 +22,7 @@ docker --version            # or: apptainer --version
 claude --version            # or: opencode --version
 ```
 
-**OpenCode auth note.** OpenCode supports either OAuth login (`opencode auth login`) or API keys via environment variables. The env var name depends on whatever you reference in your `opencode.json` — it's not standardized. Examples below use `AZURE_OPENAI_KEY` because that's how this repo's `opencode.json` is wired; substitute whatever your config expects (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `MY_PROVIDER_KEY`, etc.).
-
-```bash
-# If using API-key auth, confirm your env var is set on the host:
-echo $AZURE_OPENAI_KEY      # should be non-empty — replace with your var name
-```
+Make sure your agent is authenticated on the host before launching the sandbox. Auth methods vary (OAuth login, API keys, alternative endpoints like Bedrock/Vertex) — see [Auth](#auth) at the end for how to carry each one into the container.
 
 ---
 
@@ -102,9 +97,7 @@ apptainer shell \
 ```bash
 docker run -it --rm \
   -v /path/to/your/project:/work \
-  -v $(readlink -f $HOME/.config/opencode/opencode.json):/home/sandbox/.config/opencode/opencode.json:ro \
   -v $(which opencode):/usr/local/bin/opencode:ro \
-  -e AZURE_OPENAI_KEY=$AZURE_OPENAI_KEY \
   --workdir /work \
   agent-sandbox \
   opencode
@@ -114,12 +107,9 @@ docker run -it --rm \
 ```bash
 mkdir -p /tmp/opencode-scratch/.local /tmp/opencode-scratch/.cache
 
-APPTAINERENV_AZURE_OPENAI_KEY=$AZURE_OPENAI_KEY \
-APPTAINERENV_AZURE_API_KEY=$AZURE_OPENAI_KEY \
 apptainer shell \
   --contain --no-home \
   --bind /path/to/your/project:/work \
-  --bind $(readlink -f $HOME/.config/opencode/opencode.json):$HOME/.config/opencode/opencode.json:ro \
   --bind $(which opencode):/usr/local/bin/opencode:ro \
   --bind /tmp/opencode-scratch/.local:$HOME/.local \
   --bind /tmp/opencode-scratch/.cache:$HOME/.cache \
@@ -128,9 +118,7 @@ apptainer shell \
 # Then: opencode
 ```
 
-> **The OpenCode examples assume API-key auth via env var.** Replace `AZURE_OPENAI_KEY` with whichever env var your `opencode.json` actually references. If you use OAuth (`opencode auth login`) instead, drop the `-e` / `APPTAINERENV_*` lines and bind your auth file too — typically `~/.local/share/opencode/auth.json` (path may vary by OS).
->
-> The bind setup uses `readlink -f` and binds **only** the resolved config file (not `~/.config/opencode/`) — binding the directory leaks host paths in Docker and breaks config loading in Apptainer.
+> These minimal commands launch OpenCode in the sandbox but don't carry your auth in. See [OpenCode auth](#opencode-auth) below for the extra binds/env vars needed for your auth method.
 
 ---
 
@@ -158,9 +146,57 @@ python3 hello.py
 
 ## Gotchas
 
-- **OpenCode config is usually a symlink.** Bind only the resolved file (`readlink -f`), never the directory. See the note in §2.
 - **Apptainer `-e` is `--cleanenv`, not "set env var".** Use the `APPTAINERENV_FOO=bar apptainer ...` prefix instead.
 - **OpenCode needs writable `.local` / `.cache`.** With `--no-home` they don't exist — bind fresh `/tmp` dirs as shown.
+- **OpenCode config is usually a symlink.** If you bind it (see auth section below), use `readlink -f` and bind **only** the resolved file — never the directory. Directory binds leak host paths in Docker and break config loading in Apptainer.
+
+---
+
+## Auth
+
+How you carry auth into the sandbox depends on how your agent authenticates on the host. Both agents support multiple modes; pick the one matching your setup and add the binds/env vars to the §2 commands.
+
+### OpenCode
+
+**Option A — OAuth login (`opencode auth login` — works for Anthropic, OpenAI, GitHub Copilot, Azure, and any other provider OpenCode supports)**
+
+Bind the OpenCode data directory read-only so the container can read your auth tokens:
+
+```bash
+# Docker — add to the run command:
+-v $HOME/.local/share/opencode:/home/sandbox/.local/share/opencode:ro
+
+# Apptainer — add to the shell command:
+--bind $HOME/.local/share/opencode:$HOME/.local/share/opencode:ro
+```
+
+(Path may vary by OS; on macOS it's typically `~/Library/Application Support/opencode/`.)
+
+**Option B — API key via env var referenced in `opencode.json`**
+
+Bind the resolved config file (not the directory — see Gotchas) and pass the env var. Replace `AZURE_OPENAI_KEY` with whatever your `opencode.json` references (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.):
+
+```bash
+# Docker — add to the run command:
+-v $(readlink -f $HOME/.config/opencode/opencode.json):/home/sandbox/.config/opencode/opencode.json:ro \
+-e AZURE_OPENAI_KEY=$AZURE_OPENAI_KEY
+
+# Apptainer — prefix the shell command and add a bind:
+APPTAINERENV_AZURE_OPENAI_KEY=$AZURE_OPENAI_KEY \
+apptainer shell \
+  ... \
+  --bind $(readlink -f $HOME/.config/opencode/opencode.json):$HOME/.config/opencode/opencode.json:ro \
+  ...
+```
+
+### Claude Code
+
+The §2 commands already cover **Anthropic OAuth** (the bound `~/.claude/` + `~/.claude.json`). For other auth modes, add to the §2 command:
+
+- **`ANTHROPIC_API_KEY` env var** — pass it in: `-e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY` (Docker) or `APPTAINERENV_ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY apptainer ...`
+- **AWS Bedrock** — set `CLAUDE_CODE_USE_BEDROCK=1` (same env-var pattern) and bind your AWS creds: `-v $HOME/.aws:/home/sandbox/.aws:ro` (or `--bind`). Set `AWS_REGION` too.
+- **Google Vertex AI** — set `CLAUDE_CODE_USE_VERTEX=1` and bind your GCP creds: `-v $HOME/.config/gcloud:/home/sandbox/.config/gcloud:ro` (or `--bind`).
+- **Custom endpoint** — pass `ANTHROPIC_BASE_URL` (and an auth token env var if the proxy requires one) the same way.
 
 ---
 
