@@ -157,3 +157,16 @@ python3 hello.py
 - **OpenCode config is usually a symlink.** Bind only the resolved file (`readlink -f`), never the directory. See the note in §2.
 - **Apptainer `-e` is `--cleanenv`, not "set env var".** Use the `APPTAINERENV_FOO=bar apptainer ...` prefix instead.
 - **OpenCode needs writable `.local` / `.cache`.** With `--no-home` they don't exist — bind fresh `/tmp` dirs as shown.
+
+---
+
+## Alternative tools
+
+The Docker / Apptainer pattern above is the same shape as the recommended approach. If you want something more polished or fit to a different context:
+
+- **Anthropic's official devcontainer** — Same Docker-based approach, plus an `iptables` egress allowlist (only `api.anthropic.com`, npm, GitHub). Best fit if you live in VS Code. → [code.claude.com/docs/en/devcontainer](https://code.claude.com/docs/en/devcontainer) and [anthropics/claude-code/.devcontainer](https://github.com/anthropics/claude-code/tree/main/.devcontainer)
+- **Community Docker wrappers** — `claude-code-sandbox` and similar projects on GitHub. Convenience scripts around the same pattern.
+- **Bubblewrap / firejail (Linux) or `sandbox-exec` (macOS)** — OS-level process sandboxing without container images. Lighter weight, but profile rules are easier to get wrong than container isolation.
+- **E2B, Daytona, Modal, Vercel Sandbox** — Cloud sandboxes where *the agent spawns* a sandbox to execute code (like ChatGPT's code interpreter). Different problem — not for hosting the agent CLI itself.
+
+**Key point for the lecture:** sandboxing and the permission model are *orthogonal layers*. Broad permission grants (`Bash(*)`, `python -c *`) are how prompt injection escapes a non-sandboxed setup. Inside a sandbox they're recoverable — worst case is a trashed container. That's what lets you accept-accept-accept without it being the same kind of risk.
