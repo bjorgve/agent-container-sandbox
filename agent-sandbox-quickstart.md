@@ -22,9 +22,11 @@ docker --version            # or: apptainer --version
 claude --version            # or: opencode --version
 ```
 
-For OpenCode, you need your model provider's API key in your environment (Azure shown — adjust for OpenAI / Anthropic / etc.):
+**OpenCode auth note.** OpenCode supports either OAuth login (`opencode auth login`) or API keys via environment variables. The env var name depends on whatever you reference in your `opencode.json` — it's not standardized. Examples below use `AZURE_OPENAI_KEY` because that's how this repo's `opencode.json` is wired; substitute whatever your config expects (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `MY_PROVIDER_KEY`, etc.).
+
 ```bash
-echo $AZURE_OPENAI_KEY      # should be non-empty
+# If using API-key auth, confirm your env var is set on the host:
+echo $AZURE_OPENAI_KEY      # should be non-empty — replace with your var name
 ```
 
 ---
@@ -126,7 +128,9 @@ apptainer shell \
 # Then: opencode
 ```
 
-> The OpenCode examples use `readlink -f` and bind **only** the resolved config file (not `~/.config/opencode/`) — binding the directory leaks host paths in Docker and breaks config loading in Apptainer.
+> **The OpenCode examples assume API-key auth via env var.** Replace `AZURE_OPENAI_KEY` with whichever env var your `opencode.json` actually references. If you use OAuth (`opencode auth login`) instead, drop the `-e` / `APPTAINERENV_*` lines and bind your auth file too — typically `~/.local/share/opencode/auth.json` (path may vary by OS).
+>
+> The bind setup uses `readlink -f` and binds **only** the resolved config file (not `~/.config/opencode/`) — binding the directory leaks host paths in Docker and breaks config loading in Apptainer.
 
 ---
 
