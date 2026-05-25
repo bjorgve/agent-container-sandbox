@@ -4,9 +4,11 @@ Run **Claude Code** or **OpenCode** inside an isolated container — the agent w
 
 Two container runtimes are covered:
 - **Docker** — most laptops and workstations
-- **Apptainer** — HPC clusters, where Docker is usually unavailable
+- **Apptainer** — an alternative runtime, useful where Docker isn't installed or isn't an option
 
 You only need one of them. The same container image works for both agents.
+
+> **Do not use this on HPC clusters or shared multi-user systems for autonomous (yolo-mode) runs.** This sandbox isolates the agent on a single host, but it does **not** stop the agent from escaping via the job scheduler (`sbatch`, `srun`, `qsub`, …) or from acting against shared filesystems your user has access to. See [Shared systems and clusters](#shared-systems-and-clusters) for the details — short version: run it on your own machine.
 
 ---
 
@@ -148,7 +150,7 @@ python3 hello.py
 
 - **Apptainer `-e` is `--cleanenv`, not "set env var".** Use the `APPTAINERENV_FOO=bar apptainer ...` prefix instead.
 - **OpenCode needs writable `.local` / `.cache`.** With `--no-home` they don't exist — bind fresh `/tmp` dirs as shown.
-- **OpenCode config is usually a symlink.** If you bind it (see auth section below), use `readlink -f` and bind **only** the resolved file — never the directory. Directory binds leak host paths in Docker and break config loading in Apptainer.
+- **Symlinks inside bound directories** (common with dotfiles repos — `~/.claude.json`, `~/.claude/`, `~/.config/opencode/opencode.json`, etc.). If something you're binding is a symlink, bind the resolved file/dir with `$(readlink -f ...)` and bind it directly at the destination path — don't bind a parent directory that *contains* the symlink. Docker materializes the symlink's target hierarchy inside the container (host-path leak); Apptainer leaves the symlink dangling so the config can't be read. The `readlink -f` pattern is safe whether or not the source is a symlink.
 
 ---
 
@@ -197,6 +199,17 @@ The §2 commands already cover **Anthropic OAuth** (the bound `~/.claude/` + `~/
 - **AWS Bedrock** — set `CLAUDE_CODE_USE_BEDROCK=1` (same env-var pattern) and bind your AWS creds: `-v $HOME/.aws:/home/sandbox/.aws:ro` (or `--bind`). Set `AWS_REGION` too.
 - **Google Vertex AI** — set `CLAUDE_CODE_USE_VERTEX=1` and bind your GCP creds: `-v $HOME/.config/gcloud:/home/sandbox/.config/gcloud:ro` (or `--bind`).
 - **Custom endpoint** — pass `ANTHROPIC_BASE_URL` (and an auth token env var if the proxy requires one) the same way.
+
+---
+
+## Shared systems and clusters
+
+**We do not recommend running this guide's setup on an HPC cluster or any shared multi-user system for autonomous / yolo-mode runs.** The container isolates the agent on a single host, but a cluster or shared box has at least two escape routes the sandbox doesn't cover:
+
+- **The job scheduler.** If `sbatch`, `srun`, `qsub`, MUNGE sockets, or scheduler config files are reachable from inside the container, the agent can submit jobs that run on compute nodes *outside* the sandbox, as your real user.
+- **Shared filesystems.** Anything you can read or write on `/scratch`, `/projects`, group-owned dirs, etc. is reachable from inside the container by definition — that's where your work lives.
+
+If you have to run an agent on a shared system, **drive it interactively**, watch what it does, and don't pass `--dangerously-skip-permissions`. Treat the sandbox as a damage-limiter on the local node, not a safety harness for the cluster as a whole. Proper agent-on-cluster setups need additional layers (dedicated test accounts, scheduler-enforced QOS, controlled job-submission proxies) which are outside the scope of this guide.
 
 ---
 
